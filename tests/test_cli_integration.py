@@ -325,6 +325,31 @@ class CliIntegrationTests(unittest.TestCase):
             records = self.parse_jsonl(out_apply)
             self.assertEqual(records[0]["file_date"], "2025-12-03")
 
+    def test_root_without_year_month_is_ok_if_subfolders_have_year_month(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            parent = root / "2025"
+            month_dir = parent / "2025-03"
+            month_dir.mkdir(parents=True)
+
+            note = month_dir / "03_Monday.md"
+            payload = root / "payload.yaml"
+
+            note.write_text("Body\n", encoding="utf-8")
+            payload.write_text('journal_entry_date: "{file_date}"\n', encoding="utf-8")
+
+            code, out, _ = self.run_cli(
+                ["--target", str(parent), "--payload", str(payload), "--apply"]
+            )
+
+            self.assertEqual(code, 0)
+            self.assertIn("journal_entry_date: \"2025-03-03\"", note.read_text(encoding="utf-8"))
+
+            records = self.parse_jsonl(out)
+            self.assertEqual(len(records), 1)
+            self.assertEqual(records[0]["path"], str(note))
+            self.assertEqual(records[0]["file_date"], "2025-03-03")
+
 
 if __name__ == "__main__":
     unittest.main()

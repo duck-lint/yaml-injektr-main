@@ -121,10 +121,10 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 return 1
 
         if fallback_year_month is None:
-            missing_year_month = [
-                path for path in files if extract_year_month_from_path(str(path)) is None
-            ]
-            if missing_year_month:
+            any_year_month = any(
+                extract_year_month_from_path(str(path)) is not None for path in files
+            )
+            if not any_year_month:
                 parser.print_usage(sys.stderr)
                 print(
                     (
@@ -282,7 +282,7 @@ def process_file(
         year_month = extract_year_month_from_path(str(path)) or fallback_year_month
         if year_month is None:
             record["status"] = "error"
-            record["reason"] = "date_parse_failed: missing year-month"
+            record["reason"] = "date_parse_failed: year-month not found in path"
             return record
 
         year, month = year_month
