@@ -257,6 +257,74 @@ class CliIntegrationTests(unittest.TestCase):
             self.assertEqual(out, "")
             self.assertIn("invalid payload", err)
 
+    def test_file_date_token_parses_from_year_month_folder_and_day_prefix(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            month_dir = root / "2025-12"
+            month_dir.mkdir(parents=True)
+
+            monday = month_dir / "03_monday.md"
+            tuesday = month_dir / "04_tuesday.md"
+            payload = root / "payload.yaml"
+
+            monday.write_text("Body Monday\n", encoding="utf-8")
+            tuesday.write_text("Body Tuesday\n", encoding="utf-8")
+            payload.write_text(
+                'journal_entry_date: "{file_date}"\n'
+                "title: Test\n",
+                encoding="utf-8",
+            )
+
+            code, out, _ = self.run_cli(
+                ["--target", str(month_dir), "--payload", str(payload), "--apply"]
+            )
+
+            self.assertEqual(code, 0)
+            monday_text = monday.read_text(encoding="utf-8")
+            tuesday_text = tuesday.read_text(encoding="utf-8")
+            self.assertIn("journal_entry_date: \"2025-12-03\"", monday_text)
+            self.assertIn("journal_entry_date: \"2025-12-04\"", tuesday_text)
+
+            records = self.parse_jsonl(out)
+            by_path = {record["path"]: record for record in records}
+            self.assertEqual(by_path[str(monday)]["file_date"], "2025-12-03")
+            self.assertEqual(by_path[str(tuesday)]["file_date"], "2025-12-04")
+
+    def test_file_date_requires_year_month_flag_when_path_has_no_year_month(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            monthless = root / "December 2025"
+            monthless.mkdir(parents=True)
+
+            note = monthless / "03_monday.md"
+            payload = root / "payload.yaml"
+
+            note.write_text("Body\n", encoding="utf-8")
+            payload.write_text('journal_entry_date: "{file_date}"\n', encoding="utf-8")
+
+            code_missing, out_missing, err_missing = self.run_cli(
+                ["--target", str(monthless), "--payload", str(payload)]
+            )
+            self.assertEqual(code_missing, 1)
+            self.assertEqual(out_missing, "")
+            self.assertIn("provide --year-month", err_missing)
+
+            code_apply, out_apply, _ = self.run_cli(
+                [
+                    "--target",
+                    str(monthless),
+                    "--payload",
+                    str(payload),
+                    "--year-month",
+                    "2025-12",
+                    "--apply",
+                ]
+            )
+            self.assertEqual(code_apply, 0)
+            self.assertIn("journal_entry_date: \"2025-12-03\"", note.read_text(encoding="utf-8"))
+            records = self.parse_jsonl(out_apply)
+            self.assertEqual(records[0]["file_date"], "2025-12-03")
+
 
 if __name__ == "__main__":
     unittest.main()

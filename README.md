@@ -51,6 +51,27 @@ status: active
 
 If a note already has a top-level `uuid`, that existing value is preserved and wins over payload values/tokens.
 
+### Date from filename
+
+`payload.yaml`:
+
+```yaml
+journal_entry_date: "{file_date:%Y-%m-%d}"
+```
+
+Examples:
+
+```bash
+yaml-injektr --target ./Journals/2025-12 --payload payload.yaml --apply
+yaml-injektr --target "./Journals/December 2025" --payload payload.yaml --year-month 2025-12 --apply
+```
+
+Rules:
+- Supports `{file_date}` (ISO `YYYY-MM-DD`) and `{file_date:<strftime-format>}`.
+- Day comes from filename stem prefix (for example: `03_monday.md`, `4_tuesday.md`).
+- Year-month comes from the file path (`YYYY-MM` or `YYYY_MM`, last match wins) or `--year-month YYYY-MM`.
+- If `{file_date...}` is present and year-month cannot be resolved from paths, provide `--year-month`.
+
 ## Front matter behavior
 
 - Front matter is only detected when the file starts with `---` on line 1.

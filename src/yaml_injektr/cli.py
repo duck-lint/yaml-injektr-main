@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import argparse
+import datetime
 import fnmatch
 import json
 import os
 from pathlib import Path
 from pathlib import PurePosixPath
+import re
 import sys
 import tempfile
 from typing import Dict, List, Optional, Sequence, Set, Tuple
@@ -15,6 +17,10 @@ from typing import Dict, List, Optional, Sequence, Set, Tuple
 from .core import normalize_payload_text, transform_markdown
 
 DEFAULT_EXCLUDE_DIRS = (".obsidian", ".trash", ".git", "node_modules")
+_FILE_DATE_TOKEN_RE = re.compile(r"\{file_date(?::(?P<fmt>[^}]+))?\}")
+_DAY_PREFIX_RE = re.compile(r"^(?P<day>\d{1,2})(?:\b|_)")
+_YEAR_MONTH_PATH_RE = re.compile(r"(?P<year>\d{4})[-_](?P<month>\d{2})")
+_YEAR_MONTH_FLAG_RE = re.compile(r"^(?P<year>\d{4})[-_](?P<month>\d{2})$")
 
 
 class CLIUsageError(Exception):
@@ -30,6 +36,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser = _ArgumentParser(prog="yaml-injektr")
     parser.add_argument("--target", required=True, help="Target markdown file or directory")
     parser.add_argument("--payload", required=True, help="YAML payload file path")
+    parser.add_argument(
+        "--year-month",
+        default=None,
+        help="Fallback year-month (YYYY-MM) when not found in path",
+    )
     parser.add_argument("--apply", action="store_true", help="Apply in-place changes (default: dry-run)")
     parser.add_argument(
         "--glob",
@@ -95,6 +106,35 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         print(f"{parser.prog}: error: {exc}", file=sys.stderr)
         return 1
 
+    needs_file_date = "{file_date" in payload_text
+    fallback_year_month: Optional[Tuple[int, int]] = None
+    if needs_file_date:
+        if args.year_month is not None:
+            try:
+                fallback_year_month = parse_year_month_flag(args.year_month)
+            except ValueError:
+                parser.print_usage(sys.stderr)
+                print(
+                    f"{parser.prog}: error: invalid --year-month; expected YYYY-MM",
+                    file=sys.stderr,
+                )
+                return 1
+
+        if fallback_year_month is None:
+            missing_year_month = [
+                path for path in files if extract_year_month_from_path(str(path)) is None
+            ]
+            if missing_year_month:
+                parser.print_usage(sys.stderr)
+                print(
+                    (
+                        f"{parser.prog}: error: file_date token present but year-month not found "
+                        "in path; provide --year-month YYYY-MM"
+                    ),
+                    file=sys.stderr,
+                )
+                return 1
+
     # Emit JSONL records for skipped directories (excluded via --exclude-dir/default excludes).
     # We keep these separate from per-file processing records so "scanned" continues
     # to mean "files considered", while still providing a complete JSONL stream.
@@ -113,7 +153,13 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
 
     records: List[Dict[str, object]] = []
     for file_path in files:
-        record = process_file(file_path, payload_text, apply=args.apply)
+        record = process_file(
+            file_path,
+            payload_text,
+            apply=args.apply,
+            needs_file_date=needs_file_date,
+            fallback_year_month=fallback_year_month,
+        )
         records.append(record)
         if not args.no_json:
             print(json.dumps(record, ensure_ascii=False))
@@ -195,7 +241,14 @@ def collect_target_files(target: Path, pattern: str, exclude_dirs: Set[str]) -> 
     return files, skipped_dirs
 
 
-def process_file(path: Path, payload_text: str, *, apply: bool) -> Dict[str, object]:
+def process_file(
+    path: Path,
+    payload_text: str,
+    *,
+    apply: bool,
+    needs_file_date: bool,
+    fallback_year_month: Optional[Tuple[int, int]],
+) -> Dict[str, object]:
     record: Dict[str, object] = {
         "path": str(path),
         "status": "error",
@@ -217,8 +270,34 @@ def process_file(path: Path, payload_text: str, *, apply: bool) -> Dict[str, obj
         record["reason"] = f"decode_failed: {exc}"
         return record
 
+    per_file_payload = payload_text
+    if needs_file_date:
+        day_match = _DAY_PREFIX_RE.match(path.stem)
+        if not day_match:
+            record["status"] = "error"
+            record["reason"] = "date_parse_failed: missing day prefix"
+            return record
+
+        day = int(day_match.group("day"))
+        year_month = extract_year_month_from_path(str(path)) or fallback_year_month
+        if year_month is None:
+            record["status"] = "error"
+            record["reason"] = "date_parse_failed: missing year-month"
+            return record
+
+        year, month = year_month
+        try:
+            file_date = datetime.date(year, month, day)
+        except ValueError:
+            record["status"] = "error"
+            record["reason"] = "date_parse_failed: invalid date"
+            return record
+
+        per_file_payload = substitute_file_date_tokens(payload_text, file_date)
+        record["file_date"] = file_date.isoformat()
+
     try:
-        new_text, info = transform_markdown(text, payload_text, preserve_uuid=True)
+        new_text, info = transform_markdown(text, per_file_payload, preserve_uuid=True)
     except Exception as exc:  # pragma: no cover - defensive catch for unexpected exceptions.
         record["reason"] = f"transform_failed: {exc}"
         return record
@@ -304,6 +383,41 @@ def print_summary(
             lines.append(f"skipped: {dir_path} (excluded_dir)")
 
     print("\n".join(lines), file=sys.stderr)
+
+
+def parse_year_month_flag(value: str) -> Tuple[int, int]:
+    match = _YEAR_MONTH_FLAG_RE.match(value.strip())
+    if not match:
+        raise ValueError("invalid year-month flag")
+
+    year = int(match.group("year"))
+    month = int(match.group("month"))
+    if not (1 <= month <= 12):
+        raise ValueError("invalid month")
+    return year, month
+
+
+def extract_year_month_from_path(path_text: str) -> Optional[Tuple[int, int]]:
+    matches = list(_YEAR_MONTH_PATH_RE.finditer(path_text))
+    if not matches:
+        return None
+
+    match = matches[-1]
+    year = int(match.group("year"))
+    month = int(match.group("month"))
+    if not (1 <= month <= 12):
+        return None
+    return year, month
+
+
+def substitute_file_date_tokens(payload_text: str, file_date: datetime.date) -> str:
+    def repl(match: re.Match[str]) -> str:
+        fmt = match.group("fmt")
+        if fmt is None:
+            return file_date.isoformat()
+        return file_date.strftime(fmt)
+
+    return _FILE_DATE_TOKEN_RE.sub(repl, payload_text)
 
 
 if __name__ == "__main__":
