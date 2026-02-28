@@ -1,6 +1,6 @@
 # yaml-injektr
 
-`yaml-injektr` bulk-replaces YAML front matter in Obsidian Markdown notes using a user-supplied payload.
+`yaml-injektr` bulk-replaces YAML frontmatter in Obsidian Markdown notes using a user-supplied payload.
 
 It is safe by default:
 - Dry-run unless `--apply` is provided.
@@ -72,13 +72,13 @@ Rules:
 - Year-month comes from the file path (`YYYY-MM` or `YYYY_MM`, last match wins) or `--year-month YYYY-MM`.
 - If `{file_date...}` is present and year-month cannot be resolved from paths, provide `--year-month`.
 
-## Front matter behavior
+## frontmatter behavior
 
-- Front matter is only detected when the file starts with `---` on line 1.
+- frontmatter is only detected when the file starts with `---` on line 1.
 - Closing marker must be exactly `---` or `...`.
 - Missing closing marker is treated as an error and file is not modified.
 - Existing top-level `uuid` is preserved (case-sensitive key `uuid`).
-- Existing front matter keys other than preserved `uuid` are removed.
+- Existing frontmatter keys other than preserved `uuid` are removed.
 
 ## File walking and excludes
 
