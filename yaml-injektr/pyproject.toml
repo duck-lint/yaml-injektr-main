@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "yaml-injektr"
+version = "0.1.1"
+description = "Bulk replace Obsidian YAML front matter while preserving uuid."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "yaml-injektr contributors" }]
+
+[project.scripts]
+yaml-injektr = "yaml_injektr.cli:main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["yaml_injektr*"]
