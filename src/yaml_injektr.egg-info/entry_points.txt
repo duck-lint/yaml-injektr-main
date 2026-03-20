@@ -1,2 +1,0 @@
-[console_scripts]
-yaml-injektr = yaml_injektr.cli:main
