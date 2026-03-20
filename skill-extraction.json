@@ -1,0 +1,443 @@
+{
+  "repository_summary": {
+    "name": "yaml-injektr",
+    "version": "0.1.1",
+    "language": "Python",
+    "purpose": "CLI tool for bulk-replacing YAML frontmatter in Obsidian Markdown notes using a user-supplied payload, with safe-by-default behavior (dry-run), atomic writes, UUID preservation, UUIDv7 generation, file-date token substitution, and structured JSONL output.",
+    "scope": "Small, single-purpose utility. Four source modules (~600 lines of implementation), two test files (~490 lines), one CI workflow, one project manifest, one README. Zero external runtime dependencies beyond the Python 3.11+ standard library.",
+    "notable_design_choices": [
+      "Text operations instead of YAML round-tripping to preserve payload formatting and ordering",
+      "Dry-run by default; destructive mode requires explicit --apply flag",
+      "Atomic file writes via tempfile + os.replace to prevent partial writes",
+      "UUIDv7 generated locally using bit composition from time and secrets modules, avoiding external dependency",
+      "Structured JSONL to stdout and human summary to stderr, independently suppressible",
+      "Exit code conventions: 0 success, 1 usage error, 2 per-file processing errors",
+      "Cross-platform CI matrix: Ubuntu + Windows, Python 3.11 + 3.12"
+    ]
+  },
+  "atomic_skills": [
+    {
+      "id": "SK-001",
+      "skill": "Implementing text-based frontmatter parsing without YAML round-trip libraries",
+      "evidence_strength": "strong",
+      "evidence": [
+        "src/yaml_injektr/core.py:117-132 — _parse_frontmatter splits text on --- markers using splitlines, identifies opening and closing markers, and returns structured tuple of (had_frontmatter, frontmatter_text, body, error)",
+        "src/yaml_injektr/core.py:1-5 — module docstring explicitly states the text-operation approach and its rationale"
+      ],
+      "transferable": true,
+      "notes": "Deliberate avoidance of YAML library round-tripping to preserve formatting; demonstrates understanding of when not to use a library."
+    },
+    {
+      "id": "SK-002",
+      "skill": "Implementing UUIDv7 generation via local bit composition without external dependencies",
+      "evidence_strength": "strong",
+      "evidence": [
+        "src/yaml_injektr/core.py:26-34 — generate_uuidv7 constructs a UUIDv7 from time.time() milliseconds, secrets.randbits, and bit-shift composition per the UUIDv7 specification",
+        "tests/test_core_transform.py:49-59 — test_generates_uuidv7_when_payload_has_token_and_no_existing_uuid validates the generated UUID matches the 36-char hex-dash format"
+      ],
+      "transferable": true,
+      "notes": "Shows ability to implement a specification (UUIDv7 bit layout) from scratch using only standard library primitives."
+    },
+    {
+      "id": "SK-003",
+      "skill": "Implementing atomic file writes using tempfile and os.replace",
+      "evidence_strength": "strong",
+      "evidence": [
+        "src/yaml_injektr/cli.py:337-352 — atomic_write creates a temp file in the same directory, writes content, calls os.fsync, then os.replace; cleans up temp file on failure"
+      ],
+      "transferable": true,
+      "notes": "Filesystem safety guard preventing partial writes or data corruption on interruption. Uses os.replace for atomic rename semantics."
+    },
+    {
+      "id": "SK-004",
+      "skill": "Designing safe-by-default CLI with explicit opt-in for destructive operations",
+      "evidence_strength": "strong",
+      "evidence": [
+        "src/yaml_injektr/cli.py:44 — --apply is store_true (default false), meaning dry-run is the default",
+        "src/yaml_injektr/cli.py:320-323 — process_file returns status 'changed' with reason 'dry_run' when apply is false",
+        "tests/test_cli_integration.py:31-47 — test_dry_run_outputs_json_and_summary_without_mutation confirms file content is unchanged after dry-run",
+        "README.md — documents dry-run default and --apply flag"
+      ],
+      "transferable": true,
+      "notes": "Pattern of requiring explicit confirmation for writes; demonstrates defensive CLI design."
+    },
+    {
+      "id": "SK-005",
+      "skill": "Implementing structured JSONL output to stdout with separate human summary to stderr",
+      "evidence_strength": "strong",
+      "evidence": [
+        "src/yaml_injektr/cli.py:152 — json.dumps per-file record to stdout",
+        "src/yaml_injektr/cli.py:385 — print_summary outputs to sys.stderr",
+        "src/yaml_injektr/cli.py:141-168 — skipped-dir records and per-file records emitted as JSONL; summary emitted separately",
+        "tests/test_cli_integration.py:67-88 — test_no_json_and_no_summary_flags confirms streams are independently suppressible"
+      ],
+      "transferable": true,
+      "notes": "Separation of machine-readable output (stdout) from human-readable output (stderr) enables piping and downstream processing."
+    },
+    {
+      "id": "SK-006",
+      "skill": "Implementing exit code conventions with distinct codes for usage errors vs. processing errors",
+      "evidence_strength": "strong",
+      "evidence": [
+        "src/yaml_injektr/cli.py:170 — returns 2 if any record has error status, else 0",
+        "src/yaml_injektr/cli.py:72-74 — returns 1 for CLIUsageError",
+        "tests/test_cli_integration.py:90-107 — test_exit_code_two_when_any_file_errors validates exit code 2",
+        "README.md — documents exit codes 0, 1, 2"
+      ],
+      "transferable": true,
+      "notes": "Distinct exit codes allow callers to differentiate between input validation failure and partial processing failure."
+    },
+    {
+      "id": "SK-007",
+      "skill": "Implementing directory walking with glob pattern matching and configurable directory exclusion",
+      "evidence_strength": "strong",
+      "evidence": [
+        "src/yaml_injektr/cli.py:173-241 — collect_target_files uses os.walk with in-place dirnames pruning, supports basename-only globs (root-only), recursive **/*.md globs, and arbitrary glob patterns",
+        "src/yaml_injektr/cli.py:190-193 — case-insensitive exclude matching on Windows (os.name == 'nt')",
+        "tests/test_cli_integration.py:109-167 — test_exclude_dir_defaults_and_override_behavior validates both default and custom excludes",
+        "tests/test_cli_integration.py:200-244 — test_glob_star_md_is_root_only and test_glob_doublestar_md_is_recursive_including_root validate glob semantics"
+      ],
+      "transferable": true,
+      "notes": "Demonstrates understanding of os.walk pruning semantics (modifying dirnames in-place), glob pattern interpretation, and platform-aware path handling."
+    },
+    {
+      "id": "SK-008",
+      "skill": "Implementing regex-based token substitution in text payloads",
+      "evidence_strength": "strong",
+      "evidence": [
+        "src/yaml_injektr/cli.py:20-23 — compiled regex patterns for file_date tokens, day prefix extraction, and year-month path extraction",
+        "src/yaml_injektr/cli.py:413-420 — substitute_file_date_tokens uses re.sub with a callback to replace {file_date} and {file_date:<fmt>} tokens",
+        "src/yaml_injektr/core.py:14-17 — _UUID_LINE_RE regex for column-zero uuid line detection with named capture groups",
+        "src/yaml_injektr/core.py:142-152 — _replace_first_uuid_value preserves whitespace formatting using captured groups"
+      ],
+      "transferable": true,
+      "notes": "Multiple regex patterns with named groups, callbacks, and whitespace-preserving replacements across both modules."
+    },
+    {
+      "id": "SK-009",
+      "skill": "Implementing UUID preservation logic with precedence rules",
+      "evidence_strength": "strong",
+      "evidence": [
+        "src/yaml_injektr/core.py:88-99 — existing UUID is extracted and either replaces the payload uuid line or is prepended; falls back to UUIDv7 generation only when no existing uuid exists",
+        "tests/test_core_transform.py:15-34 — test_preserves_existing_uuid_and_replaces_other_frontmatter",
+        "tests/test_core_transform.py:61-72 — test_existing_uuid_wins_over_payload_value_or_token"
+      ],
+      "transferable": true,
+      "notes": "Data preservation rule: existing uuid always wins, even over explicit payload values or {uuidv7} tokens."
+    },
+    {
+      "id": "SK-010",
+      "skill": "Handling BOM (byte order mark) in text input",
+      "evidence_strength": "strong",
+      "evidence": [
+        "src/yaml_injektr/core.py:109-110 — _strip_bom removes leading U+FEFF character",
+        "src/yaml_injektr/cli.py:88 — payload read with utf-8-sig encoding (BOM-aware)",
+        "tests/test_core_transform.py:74-82 — test_bom_at_start_is_tolerated_and_not_written_back"
+      ],
+      "transferable": true,
+      "notes": "Defensive handling for files produced by Windows editors that prepend BOM."
+    },
+    {
+      "id": "SK-011",
+      "skill": "Detecting and preserving line ending conventions (CRLF vs LF)",
+      "evidence_strength": "strong",
+      "evidence": [
+        "src/yaml_injektr/core.py:21-23 — detect_newline returns CRLF when present",
+        "src/yaml_injektr/core.py:113-114 — _coerce_newlines normalizes all newlines to the detected convention",
+        "tests/test_core_transform.py:94-101 — test_preserves_crlf_newlines validates no bare LF in output when input is CRLF"
+      ],
+      "transferable": true,
+      "notes": "Cross-platform text processing that respects the original file's newline convention."
+    },
+    {
+      "id": "SK-012",
+      "skill": "Implementing date extraction from filesystem paths and filename conventions",
+      "evidence_strength": "strong",
+      "evidence": [
+        "src/yaml_injektr/cli.py:21-23 — _DAY_PREFIX_RE extracts day from filename stem prefix (e.g. '03_monday.md'); _YEAR_MONTH_PATH_RE extracts YYYY-MM from path segments",
+        "src/yaml_injektr/cli.py:400-410 — extract_year_month_from_path takes last match in path to handle nested year-month folders",
+        "src/yaml_injektr/cli.py:274-296 — process_file assembles datetime.date from extracted day + year-month",
+        "tests/test_cli_integration.py:260-291 — test_file_date_token_parses_from_year_month_folder_and_day_prefix validates end-to-end date extraction and substitution"
+      ],
+      "transferable": true,
+      "notes": "Convention-based date derivation from filesystem structure; designed for Obsidian journal vault layouts."
+    },
+    {
+      "id": "SK-013",
+      "skill": "Writing unittest-based test suites with both unit and integration coverage",
+      "evidence_strength": "strong",
+      "evidence": [
+        "tests/test_core_transform.py — 11 unit tests for the core transform function covering preservation, generation, edge cases (BOM, CRLF, missing closer, nested uuid, wrapped payload)",
+        "tests/test_cli_integration.py — 12 integration tests exercising the full CLI via main() with tempfile-based fixtures, JSONL parsing, exit code assertions, and file mutation verification"
+      ],
+      "transferable": true,
+      "notes": "Clear separation between unit tests (core logic) and integration tests (CLI behavior). Tests cover both happy paths and error conditions."
+    },
+    {
+      "id": "SK-014",
+      "skill": "Using temporary directories for test isolation",
+      "evidence_strength": "strong",
+      "evidence": [
+        "tests/test_cli_integration.py:32-47 — every integration test creates a fresh tempfile.TemporaryDirectory with its own vault structure, payload, and notes",
+        "tests/test_cli_integration.py:20-25 — run_cli helper captures stdout/stderr via redirect_stdout/redirect_stderr"
+      ],
+      "transferable": true,
+      "notes": "Every test is self-contained with its own filesystem fixtures; no shared mutable state between tests."
+    },
+    {
+      "id": "SK-015",
+      "skill": "Configuring cross-platform CI with GitHub Actions matrix strategy",
+      "evidence_strength": "strong",
+      "evidence": [
+        ".github/workflows/ci.yml — matrix of os: [ubuntu-latest, windows-latest] × python-version: ['3.11', '3.12'] with fail-fast: false"
+      ],
+      "transferable": true,
+      "notes": "Tests all four OS × version combinations; fail-fast disabled so all matrix entries run even if one fails."
+    },
+    {
+      "id": "SK-016",
+      "skill": "Configuring Python packaging with pyproject.toml and src-layout",
+      "evidence_strength": "strong",
+      "evidence": [
+        "pyproject.toml — setuptools build-system, src-layout via tool.setuptools.package-dir and packages.find, console_scripts entry point",
+        "src/yaml_injektr/__init__.py — package init with __all__ and __version__",
+        "src/yaml_injektr/__main__.py — module entry point for python -m yaml_injektr"
+      ],
+      "transferable": true,
+      "notes": "Modern Python packaging: pyproject.toml-only config (no setup.py), src-layout, console_scripts, and __main__.py module entry point."
+    },
+    {
+      "id": "SK-017",
+      "skill": "Designing pure functions with structured return types for composability",
+      "evidence_strength": "strong",
+      "evidence": [
+        "src/yaml_injektr/core.py:55-106 — transform_markdown returns Tuple[str, Dict[str, object]] containing the transformed text and a metadata dict with had_frontmatter, preserved_uuid, generated_uuid, error, and reason fields",
+        "src/yaml_injektr/cli.py:244-334 — process_file builds a structured record dict from transform_markdown output, adding file-level status and path"
+      ],
+      "transferable": true,
+      "notes": "Core function is stateless and returns rich metadata alongside its primary result, enabling the caller to decide how to present or act on results."
+    },
+    {
+      "id": "SK-018",
+      "skill": "Implementing per-file error continuation with aggregate error reporting",
+      "evidence_strength": "strong",
+      "evidence": [
+        "src/yaml_injektr/cli.py:155-166 — main loop processes every file regardless of individual errors, appending each record",
+        "src/yaml_injektr/cli.py:170 — exit code 2 only after all files processed if any had errors",
+        "src/yaml_injektr/cli.py:261-265 — process_file catches OSError on read and returns error record rather than propagating",
+        "tests/test_cli_integration.py:90-107 — test_exit_code_two_when_any_file_errors shows both good and bad files processed in the same run"
+      ],
+      "transferable": true,
+      "notes": "Graceful degradation: individual file failures do not abort the entire batch; errors are surfaced per-file in the output stream."
+    },
+    {
+      "id": "SK-019",
+      "skill": "Subclassing argparse.ArgumentParser for custom error handling",
+      "evidence_strength": "strong",
+      "evidence": [
+        "src/yaml_injektr/cli.py:30-32 — _ArgumentParser overrides error() to raise CLIUsageError instead of calling sys.exit, allowing the CLI to be tested in-process"
+      ],
+      "transferable": true,
+      "notes": "Enables in-process testing of CLI argument parsing without subprocess overhead or sys.exit side effects."
+    },
+    {
+      "id": "SK-020",
+      "skill": "Writing structured README documentation with install, usage, behavior rules, and development instructions",
+      "evidence_strength": "strong",
+      "evidence": [
+        "README.md — sections for Install, Usage (dry-run, apply, UUIDv7, file_date), frontmatter behavior rules, file walking and excludes, output streams, exit codes, and development/testing instructions"
+      ],
+      "transferable": true,
+      "notes": "Documentation covers both user-facing behavior and developer onboarding. Behavior rules are stated precisely (e.g., 'frontmatter is only detected when the file starts with --- on line 1')."
+    },
+    {
+      "id": "SK-021",
+      "skill": "Implementing platform-aware path handling for cross-OS compatibility",
+      "evidence_strength": "moderate",
+      "evidence": [
+        "src/yaml_injektr/cli.py:186-193 — POSIX-normalized pattern matching; case-insensitive exclude matching when os.name == 'nt'",
+        "src/yaml_injektr/cli.py:216-218 — PurePosixPath for consistent glob matching across platforms",
+        "tests/test_cli_integration.py:169-198 — test_exclude_matching_is_case_insensitive_on_windows (skipped on non-Windows)"
+      ],
+      "transferable": true,
+      "notes": "Explicit Windows/POSIX branching for directory exclusion and path normalization. Windows test exists but only runs on Windows CI."
+    },
+    {
+      "id": "SK-022",
+      "skill": "Implementing wrapped-payload normalization with validation",
+      "evidence_strength": "strong",
+      "evidence": [
+        "src/yaml_injektr/core.py:37-52 — normalize_payload_text strips --- wrapper from payload, raises ValueError if opener present without closer",
+        "tests/test_core_transform.py:112-122 — test_payload_wrapped_block_is_accepted and test_payload_wrapper_without_closer_is_rejected"
+      ],
+      "transferable": true,
+      "notes": "Input normalization with explicit validation; accepts both raw key-value YAML and ---/... wrapped blocks."
+    },
+    {
+      "id": "SK-023",
+      "skill": "Implementing column-zero-only detection to avoid matching nested YAML keys",
+      "evidence_strength": "strong",
+      "evidence": [
+        "src/yaml_injektr/core.py:14-17 — _UUID_LINE_RE uses ^ anchor with re.MULTILINE to match uuid only at column 0",
+        "tests/test_core_transform.py:124-131 — test_uuid_detection_is_column_zero_only confirms nested uuid under 'meta:' is not treated as a top-level uuid"
+      ],
+      "transferable": true,
+      "notes": "Precision regex design: top-level-only matching prevents false positives on nested keys with the same name."
+    },
+    {
+      "id": "SK-024",
+      "skill": "Designing a CLI tool for Obsidian vault operations",
+      "evidence_strength": "strong",
+      "evidence": [
+        "src/yaml_injektr/cli.py:19 — DEFAULT_EXCLUDE_DIRS includes .obsidian and .trash (Obsidian-specific directories)",
+        "README.md — tool described as targeting Obsidian Markdown notes; examples reference vaults and journal patterns",
+        "src/yaml_injektr/cli.py:274-296 — process_file handles Obsidian journal naming conventions (day-prefix filenames, year-month folders)"
+      ],
+      "transferable": false,
+      "notes": "Domain-specific tooling for Obsidian vault management. The general patterns (frontmatter manipulation, directory walking, atomic writes) are transferable; the Obsidian-specific conventions are not."
+    },
+    {
+      "id": "SK-025",
+      "skill": "Implementing defensive input validation with informative error messages",
+      "evidence_strength": "strong",
+      "evidence": [
+        "src/yaml_injektr/cli.py:79-97 — validates payload file exists, target exists and is file or directory, payload reads successfully, payload parses correctly",
+        "src/yaml_injektr/cli.py:123-136 — validates file_date token requirements (year-month availability) before processing any files",
+        "src/yaml_injektr/cli.py:267-270 — catches UnicodeDecodeError per-file with informative error record"
+      ],
+      "transferable": true,
+      "notes": "Fail-fast on input validation (exit 1) with clear error messages; fail-soft on per-file errors (exit 2) with per-record reporting."
+    },
+    {
+      "id": "SK-026",
+      "skill": "Testing error conditions and edge cases systematically",
+      "evidence_strength": "strong",
+      "evidence": [
+        "tests/test_core_transform.py:84-92 — missing frontmatter closer returns error",
+        "tests/test_core_transform.py:74-82 — BOM tolerance",
+        "tests/test_core_transform.py:94-101 — CRLF preservation",
+        "tests/test_core_transform.py:103-110 — body delimiter not confused with frontmatter",
+        "tests/test_core_transform.py:120-122 — invalid wrapped payload raises ValueError",
+        "tests/test_cli_integration.py:246-258 — invalid wrapped payload returns usage error via CLI",
+        "tests/test_cli_integration.py:293-326 — missing year-month flag returns error with guidance"
+      ],
+      "transferable": true,
+      "notes": "Edge cases (BOM, CRLF, missing closers, nested keys, invalid input) are explicitly tested rather than left to assumption."
+    },
+    {
+      "id": "SK-027",
+      "skill": "Implementing strftime-based date formatting with configurable format strings",
+      "evidence_strength": "strong",
+      "evidence": [
+        "src/yaml_injektr/cli.py:20 — _FILE_DATE_TOKEN_RE captures optional format string: {file_date} or {file_date:%Y-%m-%d}",
+        "src/yaml_injektr/cli.py:413-420 — substitute_file_date_tokens uses file_date.strftime(fmt) when format is provided, file_date.isoformat() when not"
+      ],
+      "transferable": true,
+      "notes": "User-configurable date formatting within token syntax; defaults to ISO 8601 when no format specified."
+    },
+    {
+      "id": "SK-028",
+      "skill": "Implementing in-process CLI testing via stdout/stderr capture",
+      "evidence_strength": "strong",
+      "evidence": [
+        "tests/test_cli_integration.py:20-25 — run_cli helper uses contextlib.redirect_stdout and redirect_stderr to capture CLI output without subprocess overhead",
+        "tests/test_cli_integration.py:27-29 — parse_jsonl helper for structured assertion on JSONL output"
+      ],
+      "transferable": true,
+      "notes": "In-process testing enabled by the custom ArgumentParser that raises instead of calling sys.exit. Avoids subprocess spawning for faster, more deterministic tests."
+    }
+  ],
+  "evidence_basis": {
+    "strong_evidence_sources": [
+      "src/yaml_injektr/core.py — 165 lines of core transformation logic with clear function boundaries",
+      "src/yaml_injektr/cli.py — 425 lines of CLI implementation covering argument parsing, file walking, processing, and output",
+      "tests/test_core_transform.py — 11 unit tests covering all core transformation paths",
+      "tests/test_cli_integration.py — 12 integration tests covering CLI behavior end-to-end",
+      ".github/workflows/ci.yml — CI pipeline with OS and Python version matrix",
+      "pyproject.toml — project packaging configuration",
+      "README.md — comprehensive usage and behavior documentation"
+    ],
+    "absent_or_weak_evidence_for": [
+      "No linting or type-checking configuration (mypy, ruff, flake8) despite type annotations being present in code",
+      "No logging framework usage; output is print-based",
+      "No plugin/extension architecture; tool is monolithic",
+      "No schema validation of YAML payload content (payload is treated as opaque text)",
+      "No performance benchmarking or optimization evidence",
+      "No error recovery or retry logic beyond per-file continuation"
+    ]
+  },
+  "ambiguities_or_borderline_calls": [
+    {
+      "skill_considered": "YAML parsing expertise",
+      "decision": "excluded",
+      "reason": "The tool deliberately avoids YAML parsing libraries. Frontmatter is handled as text. While this demonstrates understanding of when not to use YAML parsing, it does not demonstrate YAML parsing skill itself."
+    },
+    {
+      "skill_considered": "Type annotation practice",
+      "decision": "excluded as standalone skill",
+      "reason": "Type annotations are present (Tuple, Dict, Optional, etc.) but there is no mypy configuration, no type-checking CI step, and no evidence the annotations are enforced. Presence alone is weak evidence."
+    },
+    {
+      "skill_considered": "Security-aware coding",
+      "decision": "included implicitly in SK-003 (atomic writes) and SK-004 (safe-by-default)",
+      "reason": "Atomic writes and dry-run defaults demonstrate safety awareness, but there is no explicit security threat model, input sanitization beyond BOM/encoding, or adversarial input testing."
+    },
+    {
+      "skill_considered": "Obsidian plugin development",
+      "decision": "excluded",
+      "reason": "This is a standalone CLI tool that operates on Obsidian vaults externally. It is not an Obsidian plugin and does not use the Obsidian API."
+    },
+    {
+      "skill_considered": "Dependency management",
+      "decision": "excluded as standalone skill",
+      "reason": "The project has zero runtime dependencies. While this is a deliberate design choice, it does not demonstrate dependency management practice (lockfiles, version pinning, etc.)."
+    }
+  ],
+  "skill_clusters": [
+    {
+      "cluster": "CLI Design and Safety",
+      "skills": ["SK-004", "SK-005", "SK-006", "SK-019", "SK-025"]
+    },
+    {
+      "cluster": "Text Processing and Parsing",
+      "skills": ["SK-001", "SK-008", "SK-011", "SK-022", "SK-023"]
+    },
+    {
+      "cluster": "Filesystem Operations",
+      "skills": ["SK-003", "SK-007", "SK-012", "SK-021"]
+    },
+    {
+      "cluster": "Data Integrity and Preservation",
+      "skills": ["SK-002", "SK-009", "SK-010"]
+    },
+    {
+      "cluster": "Testing Practice",
+      "skills": ["SK-013", "SK-014", "SK-026", "SK-028"]
+    },
+    {
+      "cluster": "Project Infrastructure",
+      "skills": ["SK-015", "SK-016", "SK-020"]
+    }
+  ],
+  "transferable_signal_notes": [
+    "Most skills are broadly transferable to any CLI tool, text processing pipeline, or batch file operation project.",
+    "SK-002 (UUIDv7 bit composition) demonstrates ability to implement low-level specifications from scratch — transferable to any context requiring spec-faithful implementation.",
+    "SK-003 (atomic writes) is a general filesystem safety pattern applicable to any tool that modifies files in-place.",
+    "SK-017 (structured return types) and SK-018 (per-file error continuation) demonstrate composable, resilient batch processing design.",
+    "SK-024 (Obsidian vault operations) is domain-specific; the underlying patterns are transferable but the domain knowledge is niche."
+  ],
+  "overclaim_risks": [
+    "Do not claim 'YAML expertise' — the tool deliberately avoids YAML parsing.",
+    "Do not claim 'type-safe Python development' — annotations are present but unenforced.",
+    "Do not claim 'security engineering' — safety patterns are present but there is no threat modeling or adversarial testing.",
+    "Do not claim 'plugin development' — this is an external CLI tool, not an Obsidian plugin."
+  ],
+  "dedupe_notes_for_cross_repo_merge": [
+    "SK-003 (atomic writes) may recur in other file-manipulation tools — deduplicate by evidence quality and implementation depth.",
+    "SK-004 (safe-by-default CLI) is a design pattern that may appear across multiple CLI projects — merge into a single skill with multiple evidence sources.",
+    "SK-015 (GitHub Actions matrix CI) is a common skill — keep one canonical entry with strongest evidence.",
+    "SK-016 (pyproject.toml packaging) is standard Python practice — deduplicate across Python repos, keep best example.",
+    "SK-013/SK-014/SK-026/SK-028 (testing skills) will likely recur — consider merging into a 'Python unittest practice' skill with evidence from the strongest repo."
+  ],
+  "main_takeaway": "This repository demonstrates a focused, well-implemented CLI tool with strong evidence of defensive design (safe-by-default, atomic writes, per-file error continuation), precise text processing (regex-based parsing, line-ending preservation, BOM handling), and spec-faithful implementation (UUIDv7 generation without external dependencies). The testing practice is thorough with clear unit/integration separation and systematic edge case coverage. The strongest transferable signals are in CLI safety patterns, text-based file transformation, and batch processing with structured output. The weakest areas are the absence of type-checking enforcement and the lack of a broader project infrastructure (no linting, no schema validation of payloads). Overall, this is a clean single-purpose tool that prioritizes correctness and safety over feature breadth."
+}
